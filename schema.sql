@@ -10,14 +10,17 @@ CREATE TABLE `user` (
 
 DROP TABLE IF EXISTS `room`;
 CREATE TABLE `room` (
-  `room_id` bigint NOT NULL AUTO_INCREMENT,
+  `id` bigint NOT NULL AUTO_INCREMENT,
   `live_id` int NOT NULL,
-  `joined_user_count` int NOT NULL,
-  PRIMARY KEY (`room_id`)
+  `host_id` bigint NOT NULL,
+  `status` int NOT NULL,
+  PRIMARY KEY (`id`)
 );
 
 DROP TABLE IF EXISTS `room_member`;
 CREATE TABLE `room_member` (
   `room_id` bigint NOT NULL,
-  `user_id` int NOT NULL
+  `user_id` int NOT NULL,
+  `select_difficulty` int NOT NULL,
+  PRIMARY KEY (`room_id`, `user_id`)
 );

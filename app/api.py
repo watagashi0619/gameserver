@@ -1,11 +1,20 @@
 from enum import Enum
+from lib2to3.pytree import Base
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.security.http import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
 from . import model
-from .model import SafeUser
+from .model import (
+    JoinRoomResult,
+    LiveDifficulty,
+    ResultUser,
+    RoomInfo,
+    RoomUser,
+    SafeUser,
+    WaitRoomStatus,
+)
 
 app = FastAPI()
 
@@ -65,3 +74,56 @@ def update(req: UserCreateRequest, token: str = Depends(get_auth_token)):
     # print(req)
     model.update_user(token, req.user_name, req.leader_card_id)
     return {}
+
+
+# Room APIs
+
+
+class RoomCreateRequest(BaseModel):
+    live_id: int
+    select_difficulty: LiveDifficulty
+
+
+class RoomCreateResponse(BaseModel):
+    room_id: int
+
+
+class RoomListRequest(BaseModel):
+    live_id: int
+
+
+class RoomListResponse(BaseModel):
+    room_info_list: list[RoomInfo]
+
+
+class RoomJoinRequest(BaseModel):
+    room_id: int
+    select_difficulty: LiveDifficulty
+
+
+class RoomJoinResponse(BaseModel):
+    join_room_result: JoinRoomResult
+
+
+@app.post("/room/create", response_model=RoomCreateResponse)
+def room_create(req: RoomCreateRequest, token: str = Depends(get_auth_token)):
+    # ルームを立てた人
+    user = model.get_user_by_token(token)
+    # ルームを新規で建てる
+    room_id = model.create_room(req.live_id, user.id)
+    # ルーム立てた人を入場させる
+    model.join_room(room_id, user.id, req.select_difficulty)
+    return RoomCreateResponse(room_id=room_id)
+
+
+@app.post("/room/list", response_model=RoomListResponse)
+def room_list(req: RoomListRequest):
+    room_info_list = model.list_room(req.live_id)
+    return RoomListResponse(room_info_list=room_info_list)
+
+
+@app.post("/room/join", response_model=RoomJoinResponse)
+def room_join(req: RoomJoinRequest, token: str = Depends(get_auth_token)):
+    user = model.get_user_by_token(token)
+    join_room_result = model.join_room(req.room_id, user.id, req.select_difficulty)
+    return RoomJoinResponse(join_room_result=join_room_result)
