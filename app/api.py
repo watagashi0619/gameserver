@@ -123,11 +123,17 @@ class RoomEndRequest(BaseModel):
     judge_count_list: list[int]
     score: int
 
+
 class RoomResultRequest(BaseModel):
     room_id: int
 
+
 class RoomResultResponse(BaseModel):
     result_user_list: list[ResultUser]
+
+
+class RoomLeaveRequest(BaseModel):
+    room_id: int
 
 
 @app.post("/room/create", response_model=RoomCreateResponse)
@@ -184,3 +190,10 @@ def room_end(req: RoomEndRequest, token: str = Depends(get_auth_token)):
 def room_result(req: RoomResultRequest):
     result_user_list = model.result_room(req.room_id)
     return RoomResultResponse(result_user_list=result_user_list)
+
+
+@app.post("/room/leave", response_model=Empty)
+def room_leave(req: RoomLeaveRequest, token: str = Depends(get_auth_token)):
+    user = model.get_user_by_token(token)
+    model.leave_room(req.room_id, user.id)
+    return {}

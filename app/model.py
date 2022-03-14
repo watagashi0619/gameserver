@@ -316,3 +316,13 @@ def _result_room(conn, room_id: int):
         )
 
     return result_user_list
+
+
+def leave_room(room_id: int, user_id: int) -> None:
+    with engine.begin() as conn:
+        _leave_room(conn, room_id, user_id)
+
+
+def _leave_room(conn, room_id: int, user_id: int) -> None:
+    query = "DELETE FROM `room_member` WHERE `room_id`=:room_id AND `user_id`=:user_id"
+    conn.execute(text(query), {"room_id": room_id, "user_id": user_id})
