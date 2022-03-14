@@ -53,7 +53,7 @@ def test_room_1():
     response = client.post(
         "/room/end",
         headers=_auth_header(),
-        json={"room_id": room_id, "score": 1234, "judge_count_list": [4, 3, 2]},
+        json={"room_id": room_id, "score": 1234, "judge_count_list": [5, 4, 3, 2, 1]},
     )
     assert response.status_code == 200
     print("room/end response:", response.json())
