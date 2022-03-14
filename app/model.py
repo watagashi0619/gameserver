@@ -133,10 +133,9 @@ class RoomStatus(BaseModel):
 
 def create_room(live_id: int, host_id: int) -> int:
     with engine.begin() as conn:
+        query = "INSERT INTO `room` (live_id, host_id, status) VALUES (:live_id, :host_id, :status)"
         result = conn.execute(
-            text(
-                "INSERT INTO `room` (live_id, host_id, status) VALUES (:live_id, :host_id, :status)"
-            ),
+            text(query),
             {
                 "live_id": live_id,
                 "host_id": host_id,
@@ -149,22 +148,22 @@ def create_room(live_id: int, host_id: int) -> int:
 def list_room(live_id: int) -> list[RoomInfo]:
     with engine.begin() as conn:
         if live_id == 0:
-            query = "SELECT `room_id`,count(`room_id`),`live_id` FROM room,room_member WHERE `id`=`room_id` GROUP BY `room_id`"
+            query = "SELECT `room_id`,`live_id`,count(`room_id`) AS `joined_user_count` FROM room,room_member WHERE `id`=`room_id` GROUP BY `room_id`"
             result = conn.execute(text(query))
         else:
-            query = "SELECT `room_id`,count(`room_id`),`live_id` FROM room,room_member WHERE `id`=`room_id` AND `room_id`=ANY(SELECT `id` FROM `room` WHERE `live_id`=:live_id) GROUP BY `room_id`"
+            query = "SELECT `room_id`,`live_id`,count(`room_id`) AS `joined_user_count` FROM room,room_member WHERE `id`=`room_id` AND `room_id`=ANY(SELECT `id` FROM `room` WHERE `live_id`=:live_id) GROUP BY `room_id`"
             result = conn.execute(
                 text(query),
                 {"live_id": live_id},
             )
         return [
             RoomInfo(
-                room_id=item[0],
-                live_id=item[1],
-                joined_user_count=item[2],
+                room_id=row.room_id,
+                live_id=row.live_id,
+                joined_user_count=row.joined_user_count,
                 max_user_count=MAX_USER_COUNT,
             )
-            for item in result.fetchall()
+            for row in result.fetchall()
         ]
 
 
@@ -223,14 +222,11 @@ def _get_room_status(conn, room_id: int) -> Optional[RoomStatus]:
 
 
 def _get_number_of_room_members(conn, room_id: int) -> int:
-    query = "SELECT COUNT(`room_id`) FROM `room_member` WHERE `room_id`=:room_id"
+    query = (
+        "SELECT COUNT(`room_id`) AS `count` FROM `room_member` WHERE `room_id`=:room_id"
+    )
     result = conn.execute(text(query), {"room_id": room_id})
-    # try:
-    #    row = result.one()
-    # except NoResultFound:
-    #    return None
-    # return NumberOfRoomMembers.from_orm(row)
-    return result.one()[0]
+    return result.one().count
 
 
 def get_room_users(room_id: int, req_user_id: int) -> list[RoomUser]:
@@ -241,21 +237,21 @@ def get_room_users(room_id: int, req_user_id: int) -> list[RoomUser]:
 def _get_room_users(conn, room_id: int, req_user_id: int = None) -> list[RoomUser]:
     query = "SELECT `host_id` FROM `room` WHERE `id`=:room_id"
     result = conn.execute(text(query), {"room_id": room_id})
-    host_id = result.one()[0]
+    host_id = result.one().host_id
 
     query = "SELECT `user_id`,`name`,  `leader_card_id`,`select_difficulty` FROM `user`,`room_member` WHERE `id`=`user_id` AND `room_id`=:room_id"
     result = conn.execute(text(query), {"room_id": room_id})
 
     return [
         RoomUser(
-            user_id=item[0],
-            name=item[1],
-            leader_card_id=item[2],
-            select_difficulty=item[3],
-            is_me=(req_user_id == item[0]),
-            is_host=(host_id == item[0]),
+            user_id=row.user_id,
+            name=row.name,
+            leader_card_id=row.leader_card_id,
+            select_difficulty=row.select_difficulty,
+            is_me=(req_user_id == row.user_id),
+            is_host=(host_id == row.user_id),
         )
-        for item in result.fetchall()
+        for row in result.fetchall()
     ]
 
 
