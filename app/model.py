@@ -1,6 +1,7 @@
 import json
 import uuid
 from enum import Enum, IntEnum
+from sys import int_info
 from typing import Optional
 
 from fastapi import HTTPException
@@ -205,6 +206,11 @@ def _join_room(conn, room_id: int, user_id: int, select_difficulty: LiveDifficul
     )
 
 
+def get_room_status(room_id: int) -> WaitRoomStatus:
+    with engine.begin() as conn:
+        return _get_room_status(conn, room_id).status
+
+
 def _get_room_status(conn, room_id: int):
     query = "SELECT `status` FROM `room` WHERE `id`=:room_id"
     result = conn.execute(text(query), {"room_id": room_id})
@@ -224,3 +230,29 @@ def _get_number_of_room_members(conn, room_id: int):
     #    return None
     # return NumberOfRoomMembers.from_orm(row)
     return result.one()[0]
+
+
+def get_room_users(room_id: int, req_user_id: int) -> list[RoomUser]:
+    with engine.begin() as conn:
+        return _get_room_users(conn, room_id, req_user_id)
+
+
+def _get_room_users(conn, room_id: int, req_user_id: int):
+    query = "SELECT `host_id` FROM `room` WHERE `id`=:room_id"
+    result = conn.execute(text(query), {"room_id": room_id})
+    host_id = result.one()[0]
+
+    query = "SELECT `user_id`,`name`,  `leader_card_id`,`select_difficulty` FROM `user`,`room_member` WHERE `id`=`user_id` AND `room_id`=:room_id"
+    result = conn.execute(text(query), {"room_id": room_id})
+
+    return [
+        RoomUser(
+            user_id=item[0],
+            name=item[1],
+            leader_card_id=item[2],
+            select_difficulty=item[3],
+            is_me=(req_user_id == item[0]),
+            is_host=(host_id == item[0]),
+        )
+        for item in result.fetchall()
+    ]
