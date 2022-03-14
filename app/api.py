@@ -118,6 +118,12 @@ class RoomStartRequest(BaseModel):
     room_id: int
 
 
+class RoomEndRequest(BaseModel):
+    room_id: int
+    judge_count_list: list[int]
+    score: int
+
+
 @app.post("/room/create", response_model=RoomCreateResponse)
 def room_create(req: RoomCreateRequest, token: str = Depends(get_auth_token)):
     # ルームを立てた人
@@ -153,4 +159,16 @@ def room_wait(req: RoomWaitRequest, token: str = Depends(get_auth_token)):
 @app.post("/room/start", response_model=Empty)
 def room_start(req: RoomStartRequest, token: str = Depends(get_auth_token)):
     model.start_room(req.room_id)
+    return {}
+
+
+@app.post("/room/end", response_model=Empty)
+def room_end(req: RoomEndRequest, token: str = Depends(get_auth_token)):
+    if len(req.judge_count_list) != 5:
+        raise HTTPException(
+            status_code=400,
+            detail="The number of elements of judge_count_list must be 5.",
+        )
+    user = model.get_user_by_token(token)
+    model.end_room(req.room_id, user.id, req.judge_count_list, req.score)
     return {}

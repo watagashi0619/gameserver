@@ -269,3 +269,29 @@ def _start_room(conn, room_id: int) -> None:
     conn.execute(
         text(query), {"status": int(WaitRoomStatus.LiveStart), "room_id": room_id}
     )
+
+
+def end_room(
+    room_id: int, user_id: int, judge_count_list: list[int], score: int
+) -> None:
+    with engine.begin() as conn:
+        _end_room(conn, room_id, user_id, judge_count_list, score)
+
+
+def _end_room(
+    conn, room_id: int, user_id: int, judge_count_list: list[int], score: int
+) -> None:
+    query = "UPDATE `room_member` SET `judge_perfect`=:judge_perfect, `judge_great`=:judge_great, `judge_good`=:judge_good, `judge_bad`=:judge_bad, `judge_miss`=:judge_miss, `score`=:score WHERE `room_id`=:room_id AND `user_id`=:user_id"
+    conn.execute(
+        text(query),
+        {
+            "room_id": room_id,
+            "user_id": user_id,
+            "judge_perfect": judge_count_list[0],
+            "judge_great": judge_count_list[1],
+            "judge_good": judge_count_list[2],
+            "judge_bad": judge_count_list[3],
+            "judge_miss": judge_count_list[4],
+            "score": score,
+        },
+    )
