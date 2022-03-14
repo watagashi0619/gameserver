@@ -238,7 +238,7 @@ def get_room_users(room_id: int, req_user_id: int) -> list[RoomUser]:
         return _get_room_users(conn, room_id, req_user_id)
 
 
-def _get_room_users(conn, room_id: int, req_user_id: int) -> list[RoomUser]:
+def _get_room_users(conn, room_id: int, req_user_id: int = None) -> list[RoomUser]:
     query = "SELECT `host_id` FROM `room` WHERE `id`=:room_id"
     result = conn.execute(text(query), {"room_id": room_id})
     host_id = result.one()[0]
@@ -295,3 +295,28 @@ def _end_room(
             "score": score,
         },
     )
+
+
+def result_room(room_id: int) -> list[ResultUser]:
+    with engine.begin() as conn:
+        return _result_room(conn, room_id)
+
+
+def _result_room(conn, room_id: int):
+    result_user_list = []
+    for room_user in _get_room_users(conn, room_id):
+        query = "SELECT `user_id`, `judge_perfect`, `judge_great`, `judge_good`, `judge_bad`, `judge_miss`, `score` FROM `room_member` WHERE `room_id`=:room_id AND `user_id`=:user_id"
+        result = conn.execute(
+            text(query), {"room_id": room_id, "user_id": room_user.user_id}
+        )
+
+        row = result.one()
+
+        if row.score is None:
+            continue
+
+        result_user_list.append(
+            ResultUser(user_id=row.user_id, judge_count_list=row[1:-1], score=row.score)
+        )
+
+    return result_user_list
