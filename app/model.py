@@ -178,7 +178,6 @@ def join_room(
                 text(query),
                 {"room_id": room_id},
             )
-            print(result.one())
             if result is None:
                 return JoinRoomResult.Disbanded
             status = _get_room_status(conn, room_id).status
@@ -194,7 +193,9 @@ def join_room(
             return JoinRoomResult.OtherError
 
 
-def _join_room(conn, room_id: int, user_id: int, select_difficulty: LiveDifficulty):
+def _join_room(
+    conn, room_id: int, user_id: int, select_difficulty: LiveDifficulty
+) -> None:
     query = "INSERT INTO `room_member` (room_id, user_id, select_difficulty) VALUES (:room_id, :user_id, :select_difficulty)"
     conn.execute(
         text(query),
@@ -211,7 +212,7 @@ def get_room_status(room_id: int) -> WaitRoomStatus:
         return _get_room_status(conn, room_id).status
 
 
-def _get_room_status(conn, room_id: int):
+def _get_room_status(conn, room_id: int) -> Optional[RoomStatus]:
     query = "SELECT `status` FROM `room` WHERE `id`=:room_id"
     result = conn.execute(text(query), {"room_id": room_id})
     try:
@@ -221,7 +222,7 @@ def _get_room_status(conn, room_id: int):
     return RoomStatus.from_orm(row)
 
 
-def _get_number_of_room_members(conn, room_id: int):
+def _get_number_of_room_members(conn, room_id: int) -> int:
     query = "SELECT COUNT(`room_id`) FROM `room_member` WHERE `room_id`=:room_id"
     result = conn.execute(text(query), {"room_id": room_id})
     # try:
@@ -237,7 +238,7 @@ def get_room_users(room_id: int, req_user_id: int) -> list[RoomUser]:
         return _get_room_users(conn, room_id, req_user_id)
 
 
-def _get_room_users(conn, room_id: int, req_user_id: int):
+def _get_room_users(conn, room_id: int, req_user_id: int) -> list[RoomUser]:
     query = "SELECT `host_id` FROM `room` WHERE `id`=:room_id"
     result = conn.execute(text(query), {"room_id": room_id})
     host_id = result.one()[0]
@@ -256,3 +257,15 @@ def _get_room_users(conn, room_id: int, req_user_id: int):
         )
         for item in result.fetchall()
     ]
+
+
+def start_room(room_id: int) -> None:
+    with engine.begin() as conn:
+        _start_room(conn, room_id)
+
+
+def _start_room(conn, room_id: int) -> None:
+    query = "UPDATE `room` SET `status`=:status WHERE `id`=:room_id"
+    conn.execute(
+        text(query), {"status": int(WaitRoomStatus.LiveStart), "room_id": room_id}
+    )
