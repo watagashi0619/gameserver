@@ -5,7 +5,7 @@ from sys import int_info
 from typing import Optional
 
 from fastapi import HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, NoneIsAllowedError
 from sqlalchemy import text
 from sqlalchemy.exc import NoResultFound
 
@@ -176,7 +176,7 @@ def join_room(
 ) -> JoinRoomResult:
     with engine.begin() as conn:
         try:
-            query = "SELECT * FROM `room` WHERE `id`=:room_id"
+            query = "SELECT * FROM `room` WHERE `id`=:room_id FOR UPDATE"
             result = conn.execute(
                 text(query),
                 {"room_id": room_id},
@@ -186,7 +186,6 @@ def join_room(
             status = _get_room_status(conn, room_id).status
             if status != WaitRoomStatus.Waiting:
                 return JoinRoomResult.OtherError
-            # members = _get_number_of_room_members(conn, room_id).members
             members = _get_number_of_room_members(conn, room_id)
             if members >= 4:
                 return JoinRoomResult.RoomFull
@@ -329,8 +328,32 @@ def _result_room(conn, room_id: int):
 def leave_room(room_id: int, user_id: int) -> None:
     with engine.begin() as conn:
         _leave_room(conn, room_id, user_id)
+        if _get_number_of_room_members(conn, room_id) == 0:
+            _drop_room(conn, room_id)
+        elif _get_host_id(conn, room_id) == user_id:
+            _change_host(conn, room_id)
 
 
 def _leave_room(conn, room_id: int, user_id: int) -> None:
     query = "DELETE FROM `room_member` WHERE `room_id`=:room_id AND `user_id`=:user_id"
     conn.execute(text(query), {"room_id": room_id, "user_id": user_id})
+
+
+def _drop_room(conn, room_id: int) -> None:
+    query = "DELETE FROM `room` WHERE `id`=:room_id"
+    conn.execute(text(query), {"room_id": room_id})
+
+
+def _get_host_id(conn, room_id: int) -> int:
+    query = "SELECT `host_id` FROM `room` WHERE `id`=:room_id"
+    result = conn.execute(text(query), {"room_id": room_id})
+    row = result.one()
+    return row.host_id
+
+
+def _change_host(conn, room_id: int) -> None:
+    query = "SELECT `user_id` FROM `room_member` WHERE `room_id`=:room_id"
+    result = conn.execute(text(query), {"room_id": room_id})
+    row = result.first()
+    query = "UPDATE `room` SET `host_id`=:new_host WHERE `id`=:room_id"
+    conn.execute(text(query), {"new_host": row.user_id, "room_id": room_id})
