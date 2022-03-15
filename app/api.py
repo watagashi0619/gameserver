@@ -169,7 +169,7 @@ def room_wait(req: RoomWaitRequest, token: str = Depends(get_auth_token)):
 
 
 @app.post("/room/start", response_model=Empty)
-def room_start(req: RoomStartRequest, token: str = Depends(get_auth_token)):
+def room_start(req: RoomStartRequest):
     model.start_room(req.room_id)
     return {}
 
