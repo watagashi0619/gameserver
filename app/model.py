@@ -147,15 +147,19 @@ def create_room(live_id: int, host_id: int) -> int:
 
 def list_room(live_id: int) -> list[RoomInfo]:
     with engine.begin() as conn:
-        if live_id == 0:
-            query = "SELECT `room_id`,`live_id`,count(`room_id`) AS `joined_user_count` FROM room,room_member WHERE `id`=`room_id` GROUP BY `room_id`"
-            result = conn.execute(text(query))
-        else:
-            query = "SELECT `room_id`,`live_id`,count(`room_id`) AS `joined_user_count` FROM room,room_member WHERE `id`=`room_id` AND `room_id`=ANY(SELECT `id` FROM `room` WHERE `live_id`=:live_id) GROUP BY `room_id`"
-            result = conn.execute(
-                text(query),
-                {"live_id": live_id},
+        args = {"status": int(WaitRoomStatus.Waiting)}
+        query = "SELECT `room_id`,`live_id`,count(`room_id`) AS `joined_user_count` FROM room,room_member WHERE `id`=`room_id` AND `status`=:status "
+        if live_id != 0:
+            query += (
+                "AND `room_id`=ANY(SELECT `id` FROM `room` WHERE `live_id`=:live_id) "
             )
+            args["live_id"] = live_id
+        query += "GROUP BY `room_id`"
+        result = conn.execute(
+            text(query),
+            args,
+        )
+
         return [
             RoomInfo(
                 room_id=row.room_id,
@@ -309,11 +313,15 @@ def _result_room(conn, room_id: int):
         row = result.one()
 
         if row.score is None:
-            continue
+            return []
 
         result_user_list.append(
             ResultUser(user_id=row.user_id, judge_count_list=row[1:-1], score=row.score)
         )
+    query = "UPDATE `room` SET `status`=:status WHERE `id`=:room_id"
+    conn.execute(
+        text(query), {"room_id": room_id, "status": int(WaitRoomStatus.Dissolution)}
+    )
 
     return result_user_list
 
