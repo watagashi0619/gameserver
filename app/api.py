@@ -138,9 +138,9 @@ class RoomLeaveRequest(BaseModel):
 
 @app.post("/room/create", response_model=RoomCreateResponse)
 def room_create(req: RoomCreateRequest, token: str = Depends(get_auth_token)):
-    # ルームを立てた人
     user = model.get_user_by_token(token)
-    # ルームを新規で建てる
+    if user is None:
+        raise HTTPException(status_code=404)
     room_id = model.create_room(req.live_id, user.id)
     # ルーム立てた人を入場させる
     model.join_room(room_id, user.id, req.select_difficulty)
@@ -156,6 +156,8 @@ def room_list(req: RoomListRequest):
 @app.post("/room/join", response_model=RoomJoinResponse)
 def room_join(req: RoomJoinRequest, token: str = Depends(get_auth_token)):
     user = model.get_user_by_token(token)
+    if user is None:
+        raise HTTPException(status_code=404)
     join_room_result = model.join_room(req.room_id, user.id, req.select_difficulty)
     return RoomJoinResponse(join_room_result=join_room_result)
 
@@ -163,6 +165,8 @@ def room_join(req: RoomJoinRequest, token: str = Depends(get_auth_token)):
 @app.post("/room/wait", response_model=RoomWaitResponse)
 def room_wait(req: RoomWaitRequest, token: str = Depends(get_auth_token)):
     user = model.get_user_by_token(token)
+    if user is None:
+        raise HTTPException(status_code=404)
     status = model.get_room_status(req.room_id)
     room_user_list = model.get_room_users(req.room_id, user.id)
     return RoomWaitResponse(status=status, room_user_list=room_user_list)
@@ -195,5 +199,7 @@ def room_result(req: RoomResultRequest):
 @app.post("/room/leave", response_model=Empty)
 def room_leave(req: RoomLeaveRequest, token: str = Depends(get_auth_token)):
     user = model.get_user_by_token(token)
+    if user is None:
+        raise HTTPException(status_code=404)
     model.leave_room(req.room_id, user.id)
     return {}
