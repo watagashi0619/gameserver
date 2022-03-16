@@ -140,9 +140,7 @@ def list_room(live_id: int) -> list[RoomInfo]:
         args = {"status": int(WaitRoomStatus.Waiting)}
         query = "SELECT `room_id`,`live_id`,count(`room_id`) AS `joined_user_count` FROM room,room_member WHERE `id`=`room_id` AND `status`=:status "
         if live_id != 0:
-            query += (
-                "AND `room_id`=ANY(SELECT `id` FROM `room` WHERE `live_id`=:live_id) "
-            )
+            query += "AND `live_id`=:live_id "
             args["live_id"] = live_id
         query += "GROUP BY `room_id`"
         result = conn.execute(text(query), args)
