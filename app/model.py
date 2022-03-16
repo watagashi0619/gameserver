@@ -1,4 +1,6 @@
 import json
+import threading
+import time
 import uuid
 from enum import Enum, IntEnum
 from sys import int_info
@@ -12,6 +14,8 @@ from sqlalchemy.exc import NoResultFound
 from .db import engine
 
 MAX_USER_COUNT: int = 4
+TIMEOUT_FROM_START: int = 150 #曲の最長は 135
+TIMEOUT_FROM_END: int = 10
 
 
 class InvalidToken(Exception):
@@ -117,20 +121,6 @@ class ResultUser(BaseModel):
     score: int  # 獲得スコア
 
 
-class NumberOfRoomMembers(BaseModel):
-    members: int
-
-    class Config:
-        orm_mode = True
-
-
-class RoomStatus(BaseModel):
-    status: WaitRoomStatus
-
-    class Config:
-        orm_mode = True
-
-
 def create_room(live_id: int, host_id: int) -> int:
     with engine.begin() as conn:
         query = "INSERT INTO `room` (live_id, host_id, status) VALUES (:live_id, :host_id, :status)"
@@ -183,11 +173,11 @@ def join_room(
             )
             if result is None:
                 return JoinRoomResult.Disbanded
-            status = _get_room_status(conn, room_id).status
+            status = _get_room_status(conn, room_id)
             if status != WaitRoomStatus.Waiting:
                 return JoinRoomResult.OtherError
             members = _get_number_of_room_members(conn, room_id)
-            if members >= 4:
+            if members >= MAX_USER_COUNT:
                 return JoinRoomResult.RoomFull
             _join_room(conn, room_id, user_id, select_difficulty)
             return JoinRoomResult.Ok
@@ -209,27 +199,26 @@ def _join_room(
     )
 
 
-def get_room_status(room_id: int) -> WaitRoomStatus:
+def get_room_status(room_id: int) -> Optional[WaitRoomStatus]:
     with engine.begin() as conn:
-        return _get_room_status(conn, room_id).status
+        return _get_room_status(conn, room_id)
 
 
-def _get_room_status(conn, room_id: int) -> Optional[RoomStatus]:
+def _get_room_status(conn, room_id: int) -> Optional[WaitRoomStatus]:
     query = "SELECT `status` FROM `room` WHERE `id`=:room_id"
     result = conn.execute(text(query), {"room_id": room_id})
     try:
-        row = result.one()
+        return result.scalar()
     except NoResultFound:
         return None
-    return RoomStatus.from_orm(row)
 
 
 def _get_number_of_room_members(conn, room_id: int) -> int:
     query = (
-        "SELECT COUNT(`room_id`) AS `count` FROM `room_member` WHERE `room_id`=:room_id"
+        "SELECT COUNT(`room_id`) FROM `room_member` WHERE `room_id`=:room_id FOR UPDATE"
     )
     result = conn.execute(text(query), {"room_id": room_id})
-    return result.one().count
+    return result.scalar()
 
 
 def get_room_users(room_id: int, req_user_id: int) -> list[RoomUser]:
@@ -238,12 +227,10 @@ def get_room_users(room_id: int, req_user_id: int) -> list[RoomUser]:
 
 
 def _get_room_users(conn, room_id: int, req_user_id: int = None) -> list[RoomUser]:
-    query = "SELECT `host_id` FROM `room` WHERE `id`=:room_id"
-    result = conn.execute(text(query), {"room_id": room_id})
-    host_id = result.one().host_id
-
     query = "SELECT `user_id`,`name`,  `leader_card_id`,`select_difficulty` FROM `user`,`room_member` WHERE `id`=`user_id` AND `room_id`=:room_id"
     result = conn.execute(text(query), {"room_id": room_id})
+
+    host_id = _get_host_id(conn, room_id)
 
     return [
         RoomUser(
@@ -261,6 +248,10 @@ def _get_room_users(conn, room_id: int, req_user_id: int = None) -> list[RoomUse
 def start_room(room_id: int) -> None:
     with engine.begin() as conn:
         _start_room(conn, room_id)
+    thread = threading.Thread(
+        target=timeout_threading, args=(conn, room_id, TIMEOUT_FROM_START)
+    )
+    thread.start()
 
 
 def _start_room(conn, room_id: int) -> None:
@@ -275,6 +266,11 @@ def end_room(
 ) -> None:
     with engine.begin() as conn:
         _end_room(conn, room_id, user_id, judge_count_list, score)
+        if _get_room_status(conn, room_id) == WaitRoomStatus.LiveStart:
+            thread = threading.Thread(
+                target=timeout_threading, args=(conn, room_id, TIMEOUT_FROM_END)
+            )
+            thread.start()
 
 
 def _end_room(
@@ -296,12 +292,34 @@ def _end_room(
     )
 
 
+def timeout_threading(conn, room_id: int, timeout: int):
+    time.sleep(timeout)
+    with engine.begin() as conn:
+        _update_null_to_zero(conn, room_id)
+
+
+def _update_null_to_zero(conn, room_id: int):
+    query = "UPDATE `room_member` SET `judge_perfect`=:judge_perfect, `judge_great`=:judge_great, `judge_good`=:judge_good, `judge_bad`=:judge_bad, `judge_miss`=:judge_miss, `score`=:score WHERE `room_id`=:room_id AND `score` IS NULL"
+    conn.execute(
+        text(query),
+        {
+            "room_id": room_id,
+            "judge_perfect": 0,
+            "judge_great": 0,
+            "judge_good": 0,
+            "judge_bad": 0,
+            "judge_miss": 0,
+            "score": 0,
+        },
+    )
+
+
 def result_room(room_id: int) -> list[ResultUser]:
     with engine.begin() as conn:
         return _result_room(conn, room_id)
 
 
-def _result_room(conn, room_id: int):
+def _result_room(conn, room_id: int) -> list[ResultUser]:
     result_user_list = []
     for room_user in _get_room_users(conn, room_id):
         query = "SELECT `user_id`, `judge_perfect`, `judge_great`, `judge_good`, `judge_bad`, `judge_miss`, `score` FROM `room_member` WHERE `room_id`=:room_id AND `user_id`=:user_id"
@@ -347,8 +365,7 @@ def _drop_room(conn, room_id: int) -> None:
 def _get_host_id(conn, room_id: int) -> int:
     query = "SELECT `host_id` FROM `room` WHERE `id`=:room_id"
     result = conn.execute(text(query), {"room_id": room_id})
-    row = result.one()
-    return row.host_id
+    return result.scalar()
 
 
 def _change_host(conn, room_id: int) -> None:
